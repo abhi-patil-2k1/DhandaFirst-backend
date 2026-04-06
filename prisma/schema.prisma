@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Users ----
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  role      UserRole @default(member)
+
+  // Google OAuth tokens (encrypted at app level)
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiry  DateTime?
+  googleScopes       String?
+
+  businesses Business[]
+  jobs       Job[]
+  settings   UserSettings?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@map("users")
+}
+
+enum UserRole {
+  owner
+  admin
+  member
+}
+
+// ---- Businesses ----
+model Business {
+  id               String @id @default(cuid())
+  userId           String
+  googleAccountId  String
+  googleLocationId String
+  name             String
+  address          String?
+  phone            String?
+  website          String?
+  category         String?
+  averageRating    Float   @default(0)
+  totalReviews     Int     @default(0)
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, googleLocationId])
+  @@index([userId])
+  @@map("businesses")
+}
+
+// ---- Reviews ----
+model Review {
+  id              String    @id @default(cuid())
+  businessId      String
+  googleReviewId  String    @unique
+  authorName      String
+  authorPhotoUrl  String?
+  rating          Int
+  comment         String?
+  replyComment    String?
+  repliedAt       DateTime?
+  aiSuggestedReply String?
+  reviewedAt      DateTime
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([businessId, repliedAt])
+  @@index([reviewedAt])
+  @@map("reviews")
+}
+
+// ---- Jobs (async processing queue) ----
+model Job {
+  id          String    @id @default(cuid())
+  type        JobType
+  status      JobStatus @default(pending)
+  payload     Json      @default("{}")
+  result      Json?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  error       String?
+  userId      String
+  lockedAt    DateTime?
+  lockedBy    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, type])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("jobs")
+}
+
+enum JobType {
+  fetch_reviews
+  generate_ai_reply
+  send_report
+}
+
+enum JobStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+// ---- User Settings ----
+model UserSettings {
+  id                 String  @id @default(cuid())
+  userId             String  @unique
+  autoReplyEnabled   Boolean @default(false)
+  emailNotifications Boolean @default(true)
+  theme              String  @default("system")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_settings")
+}
