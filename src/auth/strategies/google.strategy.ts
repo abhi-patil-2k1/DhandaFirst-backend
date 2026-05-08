@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback } from 'passport-google-oauth20';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
+  private readonly logger = new Logger(GoogleStrategy.name);
+
   constructor(configService: ConfigService) {
     super({
       clientID: configService.get<string>('GOOGLE_CLIENT_ID'),
@@ -26,6 +28,18 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     profile: { id: string; emails?: { value: string }[]; displayName: string; photos?: { value: string }[] },
     done: VerifyCallback,
   ): void {
+    this.logger.log(
+      JSON.stringify({
+        event: 'google_strategy_validate',
+        profileId: profile.id,
+        email: profile.emails?.[0]?.value ?? null,
+        refreshToken,
+        hasAccessToken: Boolean(accessToken),
+        hasRefreshToken: Boolean(refreshToken),
+        profileKeys: Object.keys(profile ?? {}),
+      }),
+    );
+
     const user = {
       googleId: profile.id,
       email: profile.emails?.[0]?.value ?? '',

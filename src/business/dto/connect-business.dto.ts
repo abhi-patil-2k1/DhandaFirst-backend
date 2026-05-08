@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsInt, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ConnectBusinessDto {
@@ -33,4 +33,11 @@ export class ConnectBusinessDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiProperty({ required: false, minimum: 1, maximum: 24, default: 3 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  metricSyncMonths?: number;
 }

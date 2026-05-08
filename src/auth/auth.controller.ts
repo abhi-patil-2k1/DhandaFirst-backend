@@ -1,43 +1,61 @@
 import {
+  BadRequestException,
   Controller,
   Get,
-  Req,
+  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '@/common/decorators/current-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Logger } from '@nestjs/common';
 
 @ApiTags('auth')
 @Controller('api/auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
   ) {}
 
   @Get('google')
-  @UseGuards(AuthGuard('google'))
-  googleAuth() {
-    // Redirects to Google
+  googleAuth(@Res() res: Response) {
+    const authUrl = this.authService.getGoogleAuthUrl();
+    this.logger.log(JSON.stringify({ event: 'google_auth_redirect', authUrl }));
+    res.redirect(authUrl);
   }
 
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
-  async googleCallback(@Req() req: Request, @Res() res: Response) {
-    const user = req.user as {
-      googleId: string;
-      email: string;
-      name: string;
-      avatarUrl?: string;
-      accessToken: string;
-      refreshToken: string;
-    };
+  async googleCallback(
+    @Query('code') code: string | undefined,
+    @Query('error') error: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (error) {
+      throw new BadRequestException(`Google OAuth failed: ${error}`);
+    }
+
+    if (!code) {
+      throw new BadRequestException('Missing Google OAuth authorization code');
+    }
+
+    const user = await this.authService.exchangeCodeForGoogleProfile(code);
+
+    this.logger.log(
+      JSON.stringify({
+        event: 'google_callback_req_user',
+        email: user.email,
+        googleId: user.googleId,
+        hasAccessToken: Boolean(user.accessToken),
+        hasRefreshToken: Boolean(user.refreshToken),
+      }),
+    );
 
     const result = await this.authService.handleGoogleLogin(user);
 

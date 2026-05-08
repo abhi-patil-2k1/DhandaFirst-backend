@@ -19,30 +19,32 @@ export class BusinessService {
   }
 
   async connectBusiness(userId: string, dto: ConnectBusinessDto) {
+    const { metricSyncMonths: _metricSyncMonths, ...businessData } = dto;
+
     return this.prisma.business.upsert({
       where: {
         userId_googleLocationId: {
           userId,
-          googleLocationId: dto.googleLocationId,
+          googleLocationId: businessData.googleLocationId,
         },
       },
       update: {
-        name: dto.name,
-        address: dto.address,
-        phone: dto.phone,
-        website: dto.website,
-        category: dto.category,
-        googleAccountId: dto.googleAccountId,
+        name: businessData.name,
+        address: businessData.address,
+        phone: businessData.phone,
+        website: businessData.website,
+        category: businessData.category,
+        googleAccountId: businessData.googleAccountId,
       },
       create: {
         userId,
-        googleAccountId: dto.googleAccountId,
-        googleLocationId: dto.googleLocationId,
-        name: dto.name,
-        address: dto.address,
-        phone: dto.phone,
-        website: dto.website,
-        category: dto.category,
+        googleAccountId: businessData.googleAccountId,
+        googleLocationId: businessData.googleLocationId,
+        name: businessData.name,
+        address: businessData.address,
+        phone: businessData.phone,
+        website: businessData.website,
+        category: businessData.category,
       },
     });
   }

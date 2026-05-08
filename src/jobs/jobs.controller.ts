@@ -1,13 +1,21 @@
 import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsOptional, IsEnum } from 'class-validator';
 import { JobType } from '@prisma/client';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '@/common/decorators/current-user.decorator';
 import { JobsService } from './jobs.service';
 
 class CreateJobDto {
-  @IsEnum(['fetch_reviews', 'generate_ai_reply', 'send_report'] as const)
+  @IsEnum([
+    'sync_business_initial',
+    'sync_business_incremental',
+    'sync_reviews_page',
+    'sync_posts_page',
+    'sync_metrics_range',
+    'generate_ai_reply',
+    'send_report',
+  ] as const)
   type: JobType;
 
   @IsOptional()

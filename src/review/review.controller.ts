@@ -27,6 +27,7 @@ export class ReviewController {
   @Get('business/:businessId')
   @ApiQuery({ name: 'status', required: false, enum: ['all', 'replied', 'unreplied'] })
   @ApiQuery({ name: 'rating', required: false, type: Number })
+  @ApiQuery({ name: 'months', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async getReviews(
@@ -34,6 +35,7 @@ export class ReviewController {
     @Param('businessId') businessId: string,
     @Query('status') status?: 'all' | 'replied' | 'unreplied',
     @Query('rating') rating?: string,
+    @Query('months') months?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('sortBy') sortBy?: string,
@@ -42,6 +44,7 @@ export class ReviewController {
     const result = await this.reviewService.getReviews(user.sub, businessId, {
       status,
       rating: rating ? parseInt(rating) : undefined,
+      months: months ? parseInt(months) : undefined,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 20,
       sortBy,

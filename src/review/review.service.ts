@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { BusinessService } from '@/business/business.service';
 import { GoogleBusinessService } from '@/business/google-business.service';
+import { BusinessSyncService } from '@/business/business-sync.service';
 
 @Injectable()
 export class ReviewService {
@@ -9,6 +10,7 @@ export class ReviewService {
     private readonly prisma: PrismaService,
     private readonly businessService: BusinessService,
     private readonly googleBusiness: GoogleBusinessService,
+    private readonly businessSyncService: BusinessSyncService,
   ) {}
 
   async getReviews(
@@ -17,6 +19,7 @@ export class ReviewService {
     filters: {
       status?: 'all' | 'replied' | 'unreplied';
       rating?: number;
+      months?: number;
       page?: number;
       limit?: number;
       sortBy?: string;
@@ -26,13 +29,27 @@ export class ReviewService {
     // Verify ownership
     await this.businessService.getBusinessById(userId, businessId);
 
-    const { status = 'all', rating, page = 1, limit = 20, sortBy = 'reviewedAt', sortOrder = 'desc' } = filters;
+    const {
+      status = 'all',
+      rating,
+      months,
+      page = 1,
+      limit = 20,
+      sortBy = 'reviewedAt',
+      sortOrder = 'desc',
+    } = filters;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = { businessId };
     if (status === 'replied') where.replyComment = { not: null };
     if (status === 'unreplied') where.replyComment = null;
     if (rating) where.rating = rating;
+    if (months) {
+      const since = new Date();
+      since.setUTCMonth(since.getUTCMonth() - Math.min(Math.max(Math.trunc(months), 1), 24));
+      since.setUTCHours(0, 0, 0, 0);
+      where.reviewedAt = { gte: since };
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.review.findMany({
@@ -65,55 +82,12 @@ export class ReviewService {
   }
 
   async syncReviews(userId: string, businessId: string) {
-    const business = await this.businessService.getBusinessById(userId, businessId);
-    const locationName = `${business.googleAccountId}/locations/${business.googleLocationId}`;
-
-    const googleReviews = await this.googleBusiness.getReviews(userId, locationName);
-
-    let synced = 0;
-    for (const gr of googleReviews) {
-      await this.prisma.review.upsert({
-        where: { googleReviewId: gr.reviewId ?? gr.name },
-        update: {
-          rating: gr.starRating ? this.starRatingToNumber(gr.starRating) : 0,
-          comment: gr.comment,
-          replyComment: gr.reviewReply?.comment,
-          repliedAt: gr.reviewReply?.updateTime
-            ? new Date(gr.reviewReply.updateTime)
-            : null,
-        },
-        create: {
-          businessId,
-          googleReviewId: gr.reviewId ?? gr.name,
-          authorName: gr.reviewer?.displayName ?? 'Anonymous',
-          authorPhotoUrl: gr.reviewer?.profilePhotoUrl,
-          rating: gr.starRating ? this.starRatingToNumber(gr.starRating) : 0,
-          comment: gr.comment,
-          replyComment: gr.reviewReply?.comment,
-          repliedAt: gr.reviewReply?.updateTime
-            ? new Date(gr.reviewReply.updateTime)
-            : null,
-          reviewedAt: new Date(gr.createTime ?? gr.updateTime ?? Date.now()),
-        },
-      });
-      synced++;
-    }
-
-    // Update business stats
-    const stats = await this.prisma.review.aggregate({
-      where: { businessId },
-      _avg: { rating: true },
-      _count: true,
-    });
-    await this.prisma.business.update({
-      where: { id: businessId },
-      data: {
-        averageRating: stats._avg.rating ?? 0,
-        totalReviews: stats._count,
-      },
-    });
-
-    return { synced };
+    const job = await this.businessSyncService.startIncrementalSync(userId, businessId);
+    return {
+      jobId: job.id,
+      status: job.status,
+      message: 'Review sync queued in background',
+    };
   }
 
   async replyToReview(
@@ -141,12 +115,5 @@ export class ReviewService {
       where: { id: reviewId },
       data: { aiSuggestedReply: reply },
     });
-  }
-
-  private starRatingToNumber(starRating: string): number {
-    const map: Record<string, number> = {
-      ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5,
-    };
-    return map[starRating] ?? 0;
   }
 }

@@ -2,6 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { type JobType, type JobStatus } from '@prisma/client';
 
+interface CreateJobOptions {
+  maxAttempts?: number;
+  runAt?: Date;
+  dedupeKey?: string;
+}
+
 @Injectable()
 export class JobsService {
   private readonly logger = new Logger(JobsService.name);
@@ -12,14 +18,31 @@ export class JobsService {
     userId: string,
     type: JobType,
     payload: Record<string, unknown> = {},
-    maxAttempts = 3,
+    options: CreateJobOptions = {},
   ) {
+    const { maxAttempts = 3, runAt, dedupeKey } = options;
+
+    if (dedupeKey) {
+      const existing = await this.prisma.job.findFirst({
+        where: {
+          dedupeKey,
+          status: { in: ['pending', 'processing'] },
+        },
+      });
+
+      if (existing) {
+        return existing;
+      }
+    }
+
     return this.prisma.job.create({
       data: {
         userId,
         type,
         payload: JSON.parse(JSON.stringify(payload)),
         maxAttempts,
+        runAt,
+        dedupeKey,
       },
     });
   }
@@ -30,8 +53,9 @@ export class JobsService {
       where: {
         status: 'pending',
         lockedAt: null,
+        runAt: { lte: new Date() },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ runAt: 'asc' }, { createdAt: 'asc' }],
       take: limit,
     });
 
@@ -115,11 +139,11 @@ export class JobsService {
 
   // Clean up stale locks (jobs stuck in processing for > 5 minutes)
   async cleanStaleLocks() {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
     const result = await this.prisma.job.updateMany({
       where: {
         status: 'processing',
-        lockedAt: { lt: fiveMinutesAgo },
+        lockedAt: { lt: fifteenMinutesAgo },
       },
       data: {
         status: 'pending',

@@ -40,7 +40,7 @@ enum UserRole {
 
 // ---- Businesses ----
 model Business {
-  id               String @id @default(cuid())
+  id               String  @id @default(cuid())
   userId           String
   googleAccountId  String
   googleLocationId String
@@ -52,8 +52,11 @@ model Business {
   averageRating    Float   @default(0)
   totalReviews     Int     @default(0)
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviews Review[]
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews   Review[]
+  posts     BusinessPost[]
+  metrics   BusinessMetricDaily[]
+  syncState BusinessSyncState?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -65,17 +68,17 @@ model Business {
 
 // ---- Reviews ----
 model Review {
-  id              String    @id @default(cuid())
-  businessId      String
-  googleReviewId  String    @unique
-  authorName      String
-  authorPhotoUrl  String?
-  rating          Int
-  comment         String?
-  replyComment    String?
-  repliedAt       DateTime?
+  id               String    @id @default(cuid())
+  businessId       String
+  googleReviewId   String    @unique
+  authorName       String
+  authorPhotoUrl   String?
+  rating           Int
+  comment          String?
+  replyComment     String?
+  repliedAt        DateTime?
   aiSuggestedReply String?
-  reviewedAt      DateTime
+  reviewedAt       DateTime
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -86,6 +89,80 @@ model Review {
   @@index([businessId, repliedAt])
   @@index([reviewedAt])
   @@map("reviews")
+}
+
+// ---- Business Posts ----
+model BusinessPost {
+  id               String    @id @default(cuid())
+  businessId       String
+  googlePostId     String    @unique
+  languageCode     String?
+  summary          String?
+  topicType        String?
+  state            String?
+  searchUrl        String?
+  callToActionType String?
+  callToActionUrl  String?
+  eventTitle       String?
+  offerTitle       String?
+  publishedAt      DateTime?
+  updatedAtSource  DateTime?
+  rawPayload       Json
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId, publishedAt])
+  @@index([businessId, updatedAtSource])
+  @@map("business_posts")
+}
+
+// ---- Business Metrics ----
+model BusinessMetricDaily {
+  id            String   @id @default(cuid())
+  businessId    String
+  metric        String
+  metricLabel   String?
+  subEntityType String   @default("ALL")
+  date          DateTime
+  value         Int
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessId, metric, subEntityType, date])
+  @@index([businessId, date])
+  @@index([businessId, metric, date])
+  @@map("business_metric_daily")
+}
+
+// ---- Sync State ----
+model BusinessSyncState {
+  id                  String     @id @default(cuid())
+  businessId          String     @unique
+  initialSyncStatus   SyncStatus @default(pending)
+  reviewsSyncStatus   SyncStatus @default(pending)
+  postsSyncStatus     SyncStatus @default(pending)
+  metricsSyncStatus   SyncStatus @default(pending)
+  initialSyncMonths   Int        @default(3)
+  lastReviewSyncAt    DateTime?
+  lastPostSyncAt      DateTime?
+  lastMetricSyncAt    DateTime?
+  reviewsBackfilledAt DateTime?
+  postsBackfilledAt   DateTime?
+  metricsBackfilledAt DateTime?
+  lastError           String?
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("business_sync_states")
 }
 
 // ---- Jobs (async processing queue) ----
@@ -101,6 +178,8 @@ model Job {
   userId      String
   lockedAt    DateTime?
   lockedBy    String?
+  runAt       DateTime  @default(now())
+  dedupeKey   String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -109,13 +188,19 @@ model Job {
   updatedAt   DateTime  @updatedAt
 
   @@index([status, type])
+  @@index([status, runAt])
+  @@index([dedupeKey])
   @@index([userId])
   @@index([createdAt])
   @@map("jobs")
 }
 
 enum JobType {
-  fetch_reviews
+  sync_business_initial
+  sync_business_incremental
+  sync_reviews_page
+  sync_posts_page
+  sync_metrics_range
   generate_ai_reply
   send_report
 }
@@ -123,6 +208,13 @@ enum JobType {
 enum JobStatus {
   pending
   processing
+  completed
+  failed
+}
+
+enum SyncStatus {
+  pending
+  syncing
   completed
   failed
 }

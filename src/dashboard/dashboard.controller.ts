@@ -15,8 +15,27 @@ export class DashboardController {
   async getStats(
     @CurrentUser() user: JwtPayload,
     @Query('businessId') businessId?: string,
+    @Query('months') months?: string,
   ) {
-    const stats = await this.dashboardService.getStats(user.sub, businessId);
+    const stats = await this.dashboardService.getStats(
+      user.sub,
+      businessId,
+      months ? parseInt(months, 10) : undefined,
+    );
     return { success: true, data: stats };
+  }
+
+  @Get('metrics')
+  async getMetrics(
+    @CurrentUser() user: JwtPayload,
+    @Query('businessId') businessId: string,
+    @Query('months') months?: string,
+  ) {
+    const metrics = await this.dashboardService.getPerformanceMetrics(
+      user.sub,
+      businessId,
+      months ? parseInt(months, 10) : undefined,
+    );
+    return { success: true, data: metrics };
   }
 }
